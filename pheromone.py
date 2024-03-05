@@ -19,13 +19,13 @@ class Pheromon:
         self.pheromon = self.beta * self.pheromon
         self.pheromon[the_pos_food[0]+1, the_pos_food[1]+1] = 1.
 
-    def mark(self, the_position, has_WESN_exits):
+    def mark(self, the_position, has_WESN_exits,old_pheromones):
         assert(the_position[0] >= 0)
         assert(the_position[1] >= 0)
-        cells = np.array([self.pheromon[the_position[0]+1, the_position[1]] if has_WESN_exits[d.DIR_WEST] else 0.,
-                          self.pheromon[the_position[0]+1, the_position[1]+2] if has_WESN_exits[d.DIR_EAST] else 0.,
-                          self.pheromon[the_position[0]+2, the_position[1]+1] if has_WESN_exits[d.DIR_SOUTH] else 0.,
-                          self.pheromon[the_position[0], the_position[1]+1] if has_WESN_exits[d.DIR_NORTH] else 0.], dtype=np.double)
+        cells = np.array([old_pheromones[the_position[0]+1, the_position[1]] if has_WESN_exits[d.DIR_WEST] else 0.,
+                          old_pheromones[the_position[0]+1, the_position[1]+2] if has_WESN_exits[d.DIR_EAST] else 0.,
+                          old_pheromones[the_position[0]+2, the_position[1]+1] if has_WESN_exits[d.DIR_SOUTH] else 0.,
+                          old_pheromones[the_position[0], the_position[1]+1] if has_WESN_exits[d.DIR_NORTH] else 0.], dtype=np.double)
         pheromones = np.maximum(cells, 0.)
         self.pheromon[the_position[0]+1, the_position[1]+1] = self.alpha*np.max(pheromones) + (1-self.alpha)*0.25*pheromones.sum()
 

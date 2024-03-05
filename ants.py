@@ -203,9 +203,11 @@ class Colony:
         has_east_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.EAST) > 0
         has_south_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.SOUTH) > 0
         has_west_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.WEST) > 0
+        #mudar isso aqui de acordo com oq o prof falou
         # Marking pheromones:
+        old_pheromones = pheromones.pheromon.copy()
         [pheromones.mark(self.historic_path[i, self.age[i], :],
-                         [has_north_exit[i], has_east_exit[i], has_west_exit[i], has_south_exit[i]]) for i in range(self.directions.shape[0])]
+                         [has_north_exit[i], has_east_exit[i], has_west_exit[i], has_south_exit[i]],old_pheromones) for i in range(self.directions.shape[0])]
         return food_counter
 
     def display(self, screen):
