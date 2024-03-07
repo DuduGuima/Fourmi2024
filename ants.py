@@ -216,9 +216,12 @@ class Colony:
             has_west_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.WEST) > 0
             #mudar isso aqui de acordo com oq o prof falou
             # Marking pheromones:
-            old_pheromones = pheromones.pheromon.copy()
-            [pheromones.mark(self.historic_path[i, self.age[i], :],
-                            [has_north_exit[i], has_east_exit[i], has_west_exit[i], has_south_exit[i]],old_pheromones) for i in range(self.directions.shape[0])]
+            if rank_i ==1:
+                old_pheromones = pheromones.pheromon.copy()
+                [pheromones.mark(self.historic_path[i, self.age[i], :],
+                                [has_north_exit[i], has_east_exit[i], 
+                                has_west_exit[i], has_south_exit[i]],
+                                old_pheromones) for i in range(self.directions.shape[0])]
         #maintenant on fait une communication pour mettre a jour tous
         #les instances de collones dans chaque processeur
         #rank_i = 1 dans le communicateur general est le responsable pour les fourmis
@@ -229,6 +232,7 @@ class Colony:
         self.age = comm.bcast(np.array(self.age),root =1)
         self.historic_path = comm.bcast(np.array(self.historic_path),root =1)
         self.directions = comm.bcast(np.array(self.directions),root =1)
+        pheromones.pheromon=comm.bcast(pheromones.pheromon,root=1)
         return food_counter
 
     def display(self, screen):
@@ -245,7 +249,11 @@ if __name__ == "__main__":
         size_laby = int(sys.argv[1]),int(sys.argv[2])
 
     resolution = size_laby[1]*8, size_laby[0]*8
-    screen = pg.display.set_mode(resolution)
+    if rank_i == 0:
+        screen = pg.display.set_mode(resolution)
+    if rank_i != 0:#les autres processeurs ne vont pas creer une ecran
+        screen = pg.display.set_mode((0,0),pg.HIDDEN|pg.NOFRAME | pg.HWSURFACE | pg.DOUBLEBUF)
+        
     #la definition du nombre de fourmis    
     nb_ants = size_laby[0]*size_laby[1]//4
     max_life = 500
@@ -273,14 +281,19 @@ if __name__ == "__main__":
         mazeImg = a_maze.display()
     food_counter = 0
     
+    finish = False
 
     snapshop_taken = False
     while True:
-        if rank_i == 0: #arrumar aqui depois
+        if rank_i == 0:
             for event in pg.event.get():
                 if event.type == pg.QUIT:
                     pg.quit()
-                    exit(0)
+                    finish = True
+        finish = comm.bcast(finish,root=0)
+                    
+        if finish:
+            exit(0)
 
         deb = time.time()
         #affichage de la grille, de la collone et des pheromones
