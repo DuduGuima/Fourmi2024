@@ -100,6 +100,7 @@ class Colony:
         Outputs: None
         """
         # Update of the random seed (for manual pseudo-random) applied to all unloaded ants
+        #mudanca aqui
         self.seeds[unloaded_ants] = np.mod(16807*self.seeds[unloaded_ants], 2147483647)
 
         # Calculating possible exits for each ant in the maze:
@@ -168,6 +169,8 @@ class Colony:
                 # Calculating indices of ants whose move we just validated:
                 ind_valid_moves = ind_ants_to_move[np.nonzero(valid_moves[ind_ants_to_move])[0]]
                 # For these ants, we update their positions and directions
+                #mudanca
+                #ind_valid_moves, new_pos, ind_ants_to_move
                 self.historic_path[ind_valid_moves, self.age[ind_valid_moves] + 1, :] = new_pos[valid_moves[ind_ants_to_move] == 1, :]
                 self.directions[ind_valid_moves] = dir[valid_moves[ind_ants_to_move] == 1]
 
@@ -205,22 +208,28 @@ class Colony:
                                                      self.historic_path[unloaded_ants, self.age[unloaded_ants], 1] == pos_food[1]))[0]
         if ants_at_food_loc.shape[0] > 0:
             ants_at_food = unloaded_ants[ants_at_food_loc]
+            #mudanca
             self.is_loaded[ants_at_food] = True
 
     def advance(self, the_maze, pos_food, pos_nest, pheromones,food_counter=0):
         if not new_comm == MPI.COMM_NULL:
-            
             loaded_ants = np.nonzero(self.is_loaded == True)[0]
             unloaded_ants = np.nonzero(self.is_loaded == False)[0]
-            if loaded_ants.shape[0] > 0:
-                #acho q posso jogar esse loaded _ants ja com os indices certos
-                food_counter = self.return_to_nest(loaded_ants, pos_nest, food_counter)
             if food_counter is None:
                     food_counter = 0
+            if loaded_ants.shape[0] > 0:
+                #on trouve les index pour chaque processeur de calcul
+                index_min = floor(rank_f * loaded_ants.shape[0]/size_f)
+                index_max = floor((rank_f+1) * loaded_ants.shape[0]/size_f)
+                #acho q posso jogar esse loaded _ants ja com os indices certos
+                food_counter = self.return_to_nest(loaded_ants[index_min:index_max], pos_nest, food_counter)
+            
             if unloaded_ants.shape[0] > 0:
+                index_min = floor(rank_f * unloaded_ants.shape[0]/size_f)
+                index_max = floor((rank_f+1) * unloaded_ants.shape[0]/size_f)
                 #acho q o explore nao chama nenhuma coisa mto complicada, pode ser totalmente
                 #paralelizado, a matriz pheromones dentro dele nao passa nenhuma modificacao
-                self.explore(unloaded_ants, the_maze, pos_food, pos_nest, pheromones)
+                self.explore(unloaded_ants[index_min:index_max], the_maze, pos_food, pos_nest, pheromones)
 
             old_pos_ants = self.historic_path[range(0, self.seeds.shape[0]), self.age[:], :]
             has_north_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.NORTH) > 0
@@ -328,4 +337,4 @@ if __name__ == "__main__":
                 pg.image.save(screen, "MyFirstFood.png")
                 snapshop_taken = True
             #pg.time.wait(500)
-            #print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}", end='\r')
+            print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}", end='\r')
