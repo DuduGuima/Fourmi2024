@@ -8,12 +8,20 @@ import direction as d
 import pygame as pg
 from mpi4py import MPI
 
+
+#on fait aussi un import de la librairie math
+#on utilisera la fonctionn floor pour partager les index parmi les cores de calcul
+from math import floor
+
 #on cree les communicateurs
 comm =MPI.COMM_WORLD
 rank_i = comm.Get_rank()
 size_i = comm.Get_size()
 
 new_comm = comm.Create_group(comm.group.Excl([0]))
+if rank_i != 0:
+    rank_f = new_comm.Get_rank()
+    size_f = new_comm.Get_size()
 
 UNLOADED, LOADED = False, True
 
@@ -65,6 +73,7 @@ class Colony:
         Returns the new quantity of food
         """
         self.age[loaded_ants] -= 1
+        #a gente pode separar os indices do loaded antes
 
         in_nest_tmp = self.historic_path[loaded_ants, self.age[loaded_ants], :] == pos_nest
         if in_nest_tmp.any():
@@ -200,10 +209,14 @@ class Colony:
 
     def advance(self, the_maze, pos_food, pos_nest, pheromones,food_counter=0):
         if not new_comm == MPI.COMM_NULL:
+            
             loaded_ants = np.nonzero(self.is_loaded == True)[0]
             unloaded_ants = np.nonzero(self.is_loaded == False)[0]
             if loaded_ants.shape[0] > 0:
+                #acho q posso jogar esse loaded _ants ja com os indices certos
                 food_counter = self.return_to_nest(loaded_ants, pos_nest, food_counter)
+            if food_counter is None:
+                    food_counter = 0
             if unloaded_ants.shape[0] > 0:
                 #acho q o explore nao chama nenhuma coisa mto complicada, pode ser totalmente
                 #paralelizado, a matriz pheromones dentro dele nao passa nenhuma modificacao
@@ -225,7 +238,8 @@ class Colony:
         #maintenant on fait une communication pour mettre a jour tous
         #les instances de collones dans chaque processeur
         #rank_i = 1 dans le communicateur general est le responsable pour les fourmis
-        #print("Processeur {} has: ".format(rank_i),self.sprites)
+        #print("Processeur {} has: ".format(rank_i),type(food_counter))
+        food_counter = comm.reduce(food_counter,op = MPI.SUM,root = 0)
         self.seeds = comm.bcast(np.array(self.seeds),root = 1)
         self.is_loaded = comm.bcast(np.array(self.is_loaded),root =1)
         self.max_life = comm.bcast(np.array(self.max_life),root =1)
@@ -285,11 +299,13 @@ if __name__ == "__main__":
 
     snapshop_taken = False
     while True:
+        #ici l'ecran de 0 sera la seule visualisée
         if rank_i == 0:
             for event in pg.event.get():
                 if event.type == pg.QUIT:
                     pg.quit()
                     finish = True
+                    continue#on chagne le status du boucle et on 
         finish = comm.bcast(finish,root=0)
                     
         if finish:
@@ -311,5 +327,5 @@ if __name__ == "__main__":
             if food_counter == 1 and not snapshop_taken:
                 pg.image.save(screen, "MyFirstFood.png")
                 snapshop_taken = True
-        # pg.time.wait(500)
-        print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}", end='\r')
+            #pg.time.wait(500)
+            #print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}", end='\r')
