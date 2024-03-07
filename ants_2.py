@@ -6,14 +6,6 @@ import maze
 import pheromone
 import direction as d
 import pygame as pg
-from mpi4py import MPI
-
-#on cree les communicateurs
-comm =MPI.COMM_WORLD
-rank_i = comm.Get_rank()
-size_i = comm.Get_size()
-
-new_comm = comm.Create_group(comm.group.Excl([0]))
 
 UNLOADED, LOADED = False, True
 
@@ -198,37 +190,24 @@ class Colony:
             ants_at_food = unloaded_ants[ants_at_food_loc]
             self.is_loaded[ants_at_food] = True
 
-    def advance(self, the_maze, pos_food, pos_nest, pheromones,food_counter=0):
-        if not new_comm == MPI.COMM_NULL:
-            loaded_ants = np.nonzero(self.is_loaded == True)[0]
-            unloaded_ants = np.nonzero(self.is_loaded == False)[0]
-            if loaded_ants.shape[0] > 0:
-                food_counter = self.return_to_nest(loaded_ants, pos_nest, food_counter)
-            if unloaded_ants.shape[0] > 0:
-                #acho q o explore nao chama nenhuma coisa mto complicada, pode ser totalmente
-                #paralelizado, a matriz pheromones dentro dele nao passa nenhuma modificacao
-                self.explore(unloaded_ants, the_maze, pos_food, pos_nest, pheromones)
+    def advance(self, the_maze, pos_food, pos_nest, pheromones, food_counter=0):
+        loaded_ants = np.nonzero(self.is_loaded == True)[0]
+        unloaded_ants = np.nonzero(self.is_loaded == False)[0]
+        if loaded_ants.shape[0] > 0:
+            food_counter = self.return_to_nest(loaded_ants, pos_nest, food_counter)
+        if unloaded_ants.shape[0] > 0:
+            self.explore(unloaded_ants, the_maze, pos_food, pos_nest, pheromones)
 
-            old_pos_ants = self.historic_path[range(0, self.seeds.shape[0]), self.age[:], :]
-            has_north_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.NORTH) > 0
-            has_east_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.EAST) > 0
-            has_south_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.SOUTH) > 0
-            has_west_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.WEST) > 0
-            #mudar isso aqui de acordo com oq o prof falou
-            # Marking pheromones:
-            old_pheromones = pheromones.pheromon.copy()
-            [pheromones.mark(self.historic_path[i, self.age[i], :],
-                            [has_north_exit[i], has_east_exit[i], has_west_exit[i], has_south_exit[i]],old_pheromones) for i in range(self.directions.shape[0])]
-        #maintenant on fait une communication pour mettre a jour tous
-        #les instances de collones dans chaque processeur
-        #rank_i = 1 dans le communicateur general est le responsable pour les fourmis
-        #print("Processeur {} has: ".format(rank_i),self.sprites)
-        self.seeds = comm.bcast(np.array(self.seeds),root = 1)
-        self.is_loaded = comm.bcast(np.array(self.is_loaded),root =1)
-        self.max_life = comm.bcast(np.array(self.max_life),root =1)
-        self.age = comm.bcast(np.array(self.age),root =1)
-        self.historic_path = comm.bcast(np.array(self.historic_path),root =1)
-        self.directions = comm.bcast(np.array(self.directions),root =1)
+        old_pos_ants = self.historic_path[range(0, self.seeds.shape[0]), self.age[:], :]
+        has_north_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.NORTH) > 0
+        has_east_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.EAST) > 0
+        has_south_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.SOUTH) > 0
+        has_west_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.WEST) > 0
+        #mudar isso aqui de acordo com oq o prof falou
+        # Marking pheromones:
+        old_pheromones = pheromones.pheromon.copy()
+        [pheromones.mark(self.historic_path[i, self.age[i], :],
+                         [has_north_exit[i], has_east_exit[i], has_west_exit[i], has_south_exit[i]],old_pheromones) for i in range(self.directions.shape[0])]
         return food_counter
 
     def display(self, screen):
@@ -238,7 +217,6 @@ class Colony:
 if __name__ == "__main__":
     import sys
     import time
-    
     pg.init()
     size_laby = 25, 25
     if len(sys.argv) > 2:
@@ -246,19 +224,13 @@ if __name__ == "__main__":
 
     resolution = size_laby[1]*8, size_laby[0]*8
     screen = pg.display.set_mode(resolution)
-    #la definition du nombre de fourmis    
     nb_ants = size_laby[0]*size_laby[1]//4
     max_life = 500
     if len(sys.argv) > 3:
         max_life = int(sys.argv[3])
-
-    #definition de la position de la nourriture
     pos_food = size_laby[0]-1, size_laby[1]-1
     pos_nest = 0, 0
-    #creation du labyrinthe
-    
     a_maze = maze.Maze(size_laby, 12345)
-    #les formis qui seront creees
     ants = Colony(nb_ants, pos_nest, max_life)
     unloaded_ants = np.array(range(nb_ants))
     alpha = 0.9
@@ -267,36 +239,29 @@ if __name__ == "__main__":
         alpha = float(sys.argv[4])
     if len(sys.argv) > 5:
         beta = float(sys.argv[5])
-    #creation de la matrice de pheromones
     pherom = pheromone.Pheromon(size_laby, pos_food, alpha, beta)
-    if rank_i == 0:
-        mazeImg = a_maze.display()
+    mazeImg = a_maze.display()
     food_counter = 0
     
 
     snapshop_taken = False
     while True:
-        if rank_i == 0: #arrumar aqui depois
-            for event in pg.event.get():
-                if event.type == pg.QUIT:
-                    pg.quit()
-                    exit(0)
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                pg.quit()
+                exit(0)
 
         deb = time.time()
-        #affichage de la grille, de la collone et des pheromones
-        if rank_i==0:
-            pherom.display(screen)
-            screen.blit(mazeImg, (0, 0))
-            ants.display(screen)
-            pg.display.update()
-        #avanco das formigas?
+        pherom.display(screen)
+        screen.blit(mazeImg, (0, 0))
+        ants.display(screen)
+        pg.display.update()
+                
         food_counter = ants.advance(a_maze, pos_food, pos_nest, pherom, food_counter)
-        #evaporacao do feromonio com bheta
         pherom.do_evaporation(pos_food)
         end = time.time()
-        if rank_i==0:
-            if food_counter == 1 and not snapshop_taken:
-                pg.image.save(screen, "MyFirstFood.png")
-                snapshop_taken = True
+        if food_counter == 1 and not snapshop_taken:
+            pg.image.save(screen, "MyFirstFood.png")
+            snapshop_taken = True
         # pg.time.wait(500)
         print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}", end='\r')
