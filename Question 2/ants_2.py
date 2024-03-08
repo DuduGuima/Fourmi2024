@@ -242,11 +242,13 @@ if __name__ == "__main__":
     pherom = pheromone.Pheromon(size_laby, pos_food, alpha, beta)
     mazeImg = a_maze.display()
     food_counter = 0
-    
+    fps_counter = 0
+    fps_mean = 0
 
     snapshop_taken = False
     deb_1 =time.time()
     while True:
+        fps_counter+=1
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 pg.quit()
@@ -265,9 +267,9 @@ if __name__ == "__main__":
             pg.image.save(screen, "MyFirstFood.png")
             snapshop_taken = True
         # pg.time.wait(500)
-        if food_counter>=1000:
-            print("Time to reach 1000 foods: ",end - deb_1)
-            pg.quit()
-            exit(0)
-        print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}", end='\r')
+        if fps_counter==100:
+            fps_counter=1
+            fps_mean=0
+        fps_mean+=1./(end-deb)
+        print(f"FPS mean: {fps_mean/fps_counter:6.2f}, nourriture : {food_counter:7d}\n", end='\r')
         

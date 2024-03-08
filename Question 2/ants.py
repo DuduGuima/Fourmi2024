@@ -235,7 +235,14 @@ class Colony:
         #auront les arrays mis a jour
         
     def advance(self, the_maze, pos_food, pos_nest, pheromones,food_counter=0):
-        
+        if rank_i==0:
+            results_hist=[]
+            results_seeds=[]
+            results_is_loaded=[]
+            results_max_life=[]
+            results_age=[]
+            results_directions=[]
+
         if not new_comm == MPI.COMM_NULL:
             
             loaded_ants = np.nonzero(self.is_loaded == True)[0]
@@ -249,23 +256,14 @@ class Colony:
             new_comm.barrier()
         food_counter = comm.reduce(food_counter,op = MPI.SUM,root=0)
         if not new_comm == MPI.COMM_NULL:
-            # self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
-            # self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
             #aqui atualizamos o age e a posicao, ja que as formigas com comida foram manda
             #das pra casa
             #precisamos atualizar isloaded, age e o foodcounter tem q ser reduzido
-            # self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
-            # self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
             if unloaded_ants.shape[0] > 0:
                 #acho q o explore nao chama nenhuma coisa mto complicada, pode ser totalmente
                 #paralelizado, a matriz pheromones dentro dele nao passa nenhuma modificacao
                 self.explore(unloaded_ants, the_maze, pos_food, pos_nest, pheromones)
             new_comm.barrier()
-            # self.seeds = np.hstack(new_comm.allgather(self.seeds[index_min:index_max]))
-            # self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
-            # self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
-            # self.historic_path = np.vstack(new_comm.allgather(self.historic_path[index_min:index_max]))
-            # self.directions = np.hstack(new_comm.allgather(self.directions[index_min:index_max]))
             #on partage les phereomones
             
             old_pos_ants = self.historic_path[range(0, self.seeds.shape[0]), self.age[:], :]
@@ -277,7 +275,7 @@ class Colony:
                 # Marking pheromones:
             
             old_pheromones = pheromones.pheromon.copy()
-            #old_pheromones = result
+            
             [pheromones.mark(self.historic_path[i, self.age[i], :],
                         [has_north_exit[i], has_east_exit[i], 
                         has_west_exit[i], has_south_exit[i]],
@@ -286,24 +284,37 @@ class Colony:
             result= np.zeros_like(pheromones.pheromon)
             new_comm.Allreduce(pheromones.pheromon,result, op = MPI.MAX)
             pheromones.pheromon = result.copy()
-        #pheromones.pheromon = comm_display.bcast(pheromones.pheromon,root = 1)
         #maintenant on fait une communication pour mettre a jour tous
         #les instances de collones dans chaque processeur
-        #rank_i = 1 dans le communicateur general est le responsable pour les fourmis
-        # if rank_i==0:
-        #     food_counter=0
-        #food_counter = comm.reduce(food_counter,op = MPI.SUM,root = 0)
-        # if rank_i==0:
-        #     print("check for 0",food_counter)
+        
         if not comm_display == MPI.COMM_NULL:
-            #food_counter = comm_display.bcast(food_counter,root = 1)
-            self.seeds = np.hstack(comm_display.bcast(np.array(self.seeds),root = 1))
-            self.is_loaded = comm_display.bcast(np.array(self.is_loaded),root =1)
-            self.max_life = comm_display.bcast(np.array(self.max_life),root =1)
-            self.age = comm_display.bcast(np.array(self.age),root =1)
-            self.historic_path = comm_display.bcast(np.array(self.historic_path),root =1)
-            self.directions = comm_display.bcast(np.array(self.directions),root =1)
+            
             pheromones.pheromon=comm_display.bcast(pheromones.pheromon,root=1)
+        if rank_i!=0:
+            comm.send(self.seeds,dest=0,tag=rank_i*1)
+            comm.send(self.is_loaded,dest=0,tag=rank_i*2)
+            comm.send(self.max_life,dest=0,tag=rank_i*3)
+            comm.send(self.age,dest=0,tag=rank_i*4)
+            comm.send(self.historic_path,dest=0,tag = rank_i*5)
+            comm.send(self.directions,dest=0,tag=rank_i*6)
+        if rank_i==0:
+            for i in range(1,size_i):
+                results_seeds.append(comm.recv(source=i,tag=i*1))
+                results_is_loaded.append(comm.recv(source=i,tag=i*2))
+                results_max_life.append(comm.recv(source=i,tag=i*3))
+                results_age.append(comm.recv(source=i,tag=i*4))
+                results_hist.append(comm.recv(source=i,tag=i*5))
+                results_directions.append(comm.recv(source=i,tag=i*6))
+            
+            self.seeds = np.hstack(results_seeds)
+            self.is_loaded = np.hstack(results_is_loaded)
+            self.max_life = np.hstack(results_max_life)
+            self.age=np.hstack(results_age)
+            self.historic_path=np.vstack(results_hist)
+            self.directions = np.hstack(results_directions)
+            
+
+        
         return food_counter
 
     def display(self, screen):
@@ -356,13 +367,14 @@ if __name__ == "__main__":
     if rank_i == 0:
         mazeImg = a_maze.display()
     food_counter = 0
-    
+    fps_counter=0
+    fps_mean=0
     finish = False
 
     snapshop_taken = False
     deb_1 = time.time()
     while True:
-          
+        fps_counter+=1
         #ici l'ecran de 0 sera la seule visualisée
         if rank_i == 0:
             for event in pg.event.get():
@@ -389,14 +401,13 @@ if __name__ == "__main__":
         pherom.do_evaporation(pos_food)
         end = time.time()
         if rank_i==0:
-            if food_counter == 1 and not snapshop_taken:
-                pg.image.save(screen, "MyFirstFood.png")
-                snapshop_taken = True
+            if fps_counter==100:
+                fps_counter=1
+                fps_mean=0
+            fps_mean+=1./(end-deb)
+            # if food_counter == 1 and not snapshop_taken:
+            #     pg.image.save(screen, "MyFirstFood.png")
+            #     snapshop_taken = True
             #pg.time.wait(500)
-            if food_counter >= 1000:
-                print("Time to reach 1000 foods: ",end - deb_1)
-                pg.quit()
-                finish=True
-                continue
-            print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}" ,end='\r')
+            print(f"FPS mean: {fps_mean/fps_counter:6.2f}, nourriture : {food_counter:7d}", end='\r')
             
