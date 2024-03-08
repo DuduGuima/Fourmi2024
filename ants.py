@@ -274,6 +274,14 @@ class Colony:
         self.historic_path = comm.bcast(np.array(self.historic_path),root =1)
         self.directions = comm.bcast(np.array(self.directions),root =1)
         pheromones.pheromon=comm.bcast(pheromones.pheromon,root=1)
+        # if not comm_display == MPI.COMM_NULL:
+        #     self.seeds = comm_display.bcast(np.array(self.seeds),root = 1)
+        #     self.is_loaded = comm_display.bcast(np.array(self.is_loaded),root =1)
+        #     self.max_life = comm_display.bcast(np.array(self.max_life),root =1)
+        #     self.age = comm_display.bcast(np.array(self.age),root =1)
+        #     self.historic_path = comm_display.bcast(np.array(self.historic_path),root =1)
+        #     self.directions = comm_display.bcast(np.array(self.directions),root =1)
+        #     pheromones.pheromon=comm_display.bcast(pheromones.pheromon,root=1)
         return food_counter
 
     def display(self, screen):
@@ -335,7 +343,7 @@ if __name__ == "__main__":
                 if event.type == pg.QUIT:
                     pg.quit()
                     finish = True
-                    continue#on chagne le status du boucle et on 
+                    #continue#on chagne le status du boucle et on 
         finish = comm.bcast(finish,root=0)
                     
         
