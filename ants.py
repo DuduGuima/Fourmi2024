@@ -23,6 +23,8 @@ if rank_i != 0:
     rank_f = new_comm.Get_rank()
     size_f = new_comm.Get_size()
 
+
+comm_display = comm.Create_group(comm.group.Incl([0,1]))
 UNLOADED, LOADED = False, True
 
 exploration_coefs = 0.
@@ -132,7 +134,7 @@ class Colony:
         max_pheromones = np.maximum(north_pheromone, east_pheromone)
         max_pheromones = np.maximum(max_pheromones, south_pheromone)
         max_pheromones = np.maximum(max_pheromones, west_pheromone)
-
+        #on partage les taches
         # Calculating choices for all ants not carrying food (for others, we calculate but it doesn't matter)
         choices = self.seeds[:] / 2147483647.
 
@@ -173,7 +175,12 @@ class Colony:
                 #ind_valid_moves, new_pos, ind_ants_to_move
                 self.historic_path[ind_valid_moves, self.age[ind_valid_moves] + 1, :] = new_pos[valid_moves[ind_ants_to_move] == 1, :]
                 self.directions[ind_valid_moves] = dir[valid_moves[ind_ants_to_move] == 1]
-
+            #nesse ponto cada processador de calculo tem uma versao do historico
+            #q passou por varias mudancas... as direcoes tambem
+            #ou mudamos localmente e depois juntamos todas as mudancas
+            #juntar depois, usando o unloaded ants, ja que so essas foram mexidas
+            #
+            #print("shape history", np.shape(self.historic_path))
         ind_following_ants = np.nonzero(np.logical_and(choices[unloaded_ants] > exploration_coefs,
                                                        max_pheromones[unloaded_ants] > 0.))[0]
         if ind_following_ants.shape[0] > 0:
@@ -210,35 +217,46 @@ class Colony:
             ants_at_food = unloaded_ants[ants_at_food_loc]
             #mudanca
             self.is_loaded[ants_at_food] = True
-
+        #apres explore, chaque processus de calcule a une partie des attributes
+        #de la collone. on doit appeler un allgather, ainsi tous les processus
+        #auront les arrays mis a jour
+        
     def advance(self, the_maze, pos_food, pos_nest, pheromones,food_counter=0):
+        
         if not new_comm == MPI.COMM_NULL:
-            loaded_ants = np.nonzero(self.is_loaded == True)[0]
-            unloaded_ants = np.nonzero(self.is_loaded == False)[0]
+            index_min = floor(rank_f * self.age.shape[0]/size_f)
+            index_max = floor((rank_f+1) * self.age.shape[0]/size_f)
+            loaded_ants = np.nonzero(self.is_loaded[index_min:index_max] == True)[0]
+            unloaded_ants = np.nonzero(self.is_loaded[index_min:index_max] == False)[0]
             if food_counter is None:
                     food_counter = 0
             if loaded_ants.shape[0] > 0:
                 #on trouve les index pour chaque processeur de calcul
-                index_min = floor(rank_f * loaded_ants.shape[0]/size_f)
-                index_max = floor((rank_f+1) * loaded_ants.shape[0]/size_f)
                 #acho q posso jogar esse loaded _ants ja com os indices certos
-                food_counter = self.return_to_nest(loaded_ants[index_min:index_max], pos_nest, food_counter)
-            
+                food_counter = self.return_to_nest(loaded_ants, pos_nest, food_counter)
+            #aqui atualizamos o age e a posicao, ja que as formigas com comida foram manda
+            #das pra casa
+            #precisamos atualizar isloaded, age e o foodcounter tem q ser reduzido
+            self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
+            self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
             if unloaded_ants.shape[0] > 0:
-                index_min = floor(rank_f * unloaded_ants.shape[0]/size_f)
-                index_max = floor((rank_f+1) * unloaded_ants.shape[0]/size_f)
                 #acho q o explore nao chama nenhuma coisa mto complicada, pode ser totalmente
                 #paralelizado, a matriz pheromones dentro dele nao passa nenhuma modificacao
-                self.explore(unloaded_ants[index_min:index_max], the_maze, pos_food, pos_nest, pheromones)
-
-            old_pos_ants = self.historic_path[range(0, self.seeds.shape[0]), self.age[:], :]
-            has_north_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.NORTH) > 0
-            has_east_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.EAST) > 0
-            has_south_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.SOUTH) > 0
-            has_west_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.WEST) > 0
-            #mudar isso aqui de acordo com oq o prof falou
-            # Marking pheromones:
-            if rank_i ==1:
+                self.explore(unloaded_ants, the_maze, pos_food, pos_nest, pheromones)
+            self.seeds = np.hstack(new_comm.allgather(self.seeds[index_min:index_max]))
+            self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
+            self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
+            self.historic_path = np.vstack(new_comm.allgather(self.historic_path[index_min:index_max]))
+            self.directions = np.hstack(new_comm.allgather(self.directions[index_min:index_max]))
+            if rank_f == 0:
+                old_pos_ants = self.historic_path[range(0, self.seeds.shape[0]), self.age[:], :]
+                has_north_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.NORTH) > 0
+                has_east_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.EAST) > 0
+                has_south_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.SOUTH) > 0
+                has_west_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.WEST) > 0
+                #mudar isso aqui de acordo com oq o prof falou
+                # Marking pheromones:
+            
                 old_pheromones = pheromones.pheromon.copy()
                 [pheromones.mark(self.historic_path[i, self.age[i], :],
                                 [has_north_exit[i], has_east_exit[i], 
@@ -307,7 +325,10 @@ if __name__ == "__main__":
     finish = False
 
     snapshop_taken = False
+    deb_1 = time.time()
     while True:
+        if finish:
+            exit(0)
         #ici l'ecran de 0 sera la seule visualisée
         if rank_i == 0:
             for event in pg.event.get():
@@ -317,10 +338,9 @@ if __name__ == "__main__":
                     continue#on chagne le status du boucle et on 
         finish = comm.bcast(finish,root=0)
                     
-        if finish:
-            exit(0)
+        
 
-        deb = time.time()
+        
         #affichage de la grille, de la collone et des pheromones
         if rank_i==0:
             pherom.display(screen)
@@ -328,6 +348,7 @@ if __name__ == "__main__":
             ants.display(screen)
             pg.display.update()
         #avanco das formigas?
+        deb = time.time()
         food_counter = ants.advance(a_maze, pos_food, pos_nest, pherom, food_counter)
         #evaporacao do feromonio com bheta
         pherom.do_evaporation(pos_food)
@@ -337,4 +358,10 @@ if __name__ == "__main__":
                 pg.image.save(screen, "MyFirstFood.png")
                 snapshop_taken = True
             #pg.time.wait(500)
+            if food_counter == 1000:
+                print("Time to reach 1000 foods: ",end - deb_1)
+                pg.quit()
+                finish=True
+                continue
             print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}", end='\r')
+            
