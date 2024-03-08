@@ -101,8 +101,7 @@ class Colony:
 
         Outputs: None
         """
-        index_min = floor(rank_f * self.age.shape[0]/size_f)
-        index_max = floor((rank_f+1) * self.age.shape[0]/size_f)
+        
         # Update of the random seed (for manual pseudo-random) applied to all unloaded ants
         #mudanca aqui
         
@@ -181,14 +180,12 @@ class Colony:
                 #ind_valid_moves, new_pos, ind_ants_to_move
                 self.historic_path[ind_valid_moves, self.age[ind_valid_moves] + 1, :] = new_pos[valid_moves[ind_ants_to_move] == 1, :]
                 self.directions[ind_valid_moves] = dir[valid_moves[ind_ants_to_move] == 1]
-                #self.historic_path = np.vstack(new_comm.allgather(self.historic_path[index_min:index_max]))
-                #self.directions = np.hstack(new_comm.allgather(self.directions[index_min:index_max]))
+                
             #nesse ponto cada processador de calculo tem uma versao do historico
             #q passou por varias mudancas... as direcoes tambem
             #ou mudamos localmente e depois juntamos todas as mudancas
             #juntar depois, usando o unloaded ants, ja que so essas foram mexidas
-            #
-            #print("shape history", np.shape(self.historic_path))
+            
         ind_following_ants = np.nonzero(np.logical_and(choices[unloaded_ants] > exploration_coefs,
                                                        max_pheromones[unloaded_ants] > 0.))[0]
         if ind_following_ants.shape[0] > 0:
@@ -205,7 +202,6 @@ class Colony:
             self.historic_path[ind_following_ants, self.age[ind_following_ants]+1, 0] -= max_north * np.ones(ind_following_ants.shape[0], dtype=np.int16)
             max_south = (south_pheromone[ind_following_ants] == max_pheromones[ind_following_ants])
             self.historic_path[ind_following_ants, self.age[ind_following_ants]+1, 0] += max_south * np.ones(ind_following_ants.shape[0], dtype=np.int16)
-            #self.historic_path = np.vstack(new_comm.allgather(self.historic_path[index_min:index_max]))
             
         # Aging one unit for the age of ants not carrying food
         if unloaded_ants.shape[0] > 0:
@@ -233,20 +229,17 @@ class Colony:
     def advance(self, the_maze, pos_food, pos_nest, pheromones,food_counter=0):
         
         if not new_comm == MPI.COMM_NULL:
-            index_min = floor(rank_f * self.age.shape[0]/size_f)
-            index_max = floor((rank_f+1) * self.age.shape[0]/size_f)
-            loaded_ants = np.nonzero(self.is_loaded[index_min:index_max] == True)[0]
-            unloaded_ants = np.nonzero(self.is_loaded[index_min:index_max] == False)[0]
+            loaded_ants = np.nonzero(self.is_loaded == True)[0]
+            unloaded_ants = np.nonzero(self.is_loaded == False)[0]
             if food_counter is None:
                     food_counter = 0
             if loaded_ants.shape[0] > 0:
                 #on trouve les index pour chaque processeur de calcul
                 #acho q posso jogar esse loaded _ants ja com os indices certos
                 food_counter = self.return_to_nest(loaded_ants, pos_nest, food_counter)
-        food_counter = comm.reduce(food_counter,op = MPI.SUM,root=0)
+                
         if not new_comm == MPI.COMM_NULL:
-            self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
-            self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
+            
             #aqui atualizamos o age e a posicao, ja que as formigas com comida foram manda
             #das pra casa
             #precisamos atualizar isloaded, age e o foodcounter tem q ser reduzido
@@ -256,12 +249,7 @@ class Colony:
                 #acho q o explore nao chama nenhuma coisa mto complicada, pode ser totalmente
                 #paralelizado, a matriz pheromones dentro dele nao passa nenhuma modificacao
                 self.explore(unloaded_ants, the_maze, pos_food, pos_nest, pheromones)
-            new_comm.barrier()
-            self.seeds = np.hstack(new_comm.allgather(self.seeds[index_min:index_max]))
-            self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
-            self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
-            self.historic_path = np.vstack(new_comm.allgather(self.historic_path[index_min:index_max]))
-            self.directions = np.hstack(new_comm.allgather(self.directions[index_min:index_max]))
+            
             if rank_f == 0:
                 old_pos_ants = self.historic_path[range(0, self.seeds.shape[0]), self.age[:], :]
                 has_north_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.NORTH) > 0
@@ -276,17 +264,11 @@ class Colony:
                                 [has_north_exit[i], has_east_exit[i], 
                                 has_west_exit[i], has_south_exit[i]],
                                 old_pheromones) for i in range(self.directions.shape[0])]
-        pheromones.pheromon = comm.bcast(pheromones.pheromon,root = 1)
+                comm.send(food_counter,dest= 0)
         #maintenant on fait une communication pour mettre a jour tous
-        #les instances de collones dans chaque processeur
-        #rank_i = 1 dans le communicateur general est le responsable pour les fourmis
-        # if rank_i==0:
-        #     food_counter=0
-        #food_counter = comm.reduce(food_counter,op = MPI.SUM,root = 0)
-        # if rank_i==0:
-        #     print("check for 0",food_counter)
+        
         if not comm_display == MPI.COMM_NULL:
-            #food_counter = comm_display.bcast(food_counter,root = 1)
+            food_counter = comm_display.bcast(food_counter,root = 1)
             self.seeds = comm_display.bcast(np.array(self.seeds),root = 1)
             self.is_loaded = comm_display.bcast(np.array(self.is_loaded),root =1)
             self.max_life = comm_display.bcast(np.array(self.max_life),root =1)
@@ -374,6 +356,7 @@ if __name__ == "__main__":
         pherom.do_evaporation(pos_food)
         end = time.time()
         if rank_i==0:
+
             if food_counter == 1 and not snapshop_taken:
                 pg.image.save(screen, "MyFirstFood.png")
                 snapshop_taken = True
@@ -383,5 +366,6 @@ if __name__ == "__main__":
                 pg.quit()
                 finish=True
                 continue
-            print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}" ,end='\r')
+            print(f"FPS : {1./(end-deb):6.2f}, nourriture : {food_counter:7d}")
+            
             
