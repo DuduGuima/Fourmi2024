@@ -22,6 +22,7 @@ new_comm = comm.Create_group(comm.group.Excl([0]))
 if rank_i != 0:
     rank_f = new_comm.Get_rank()
     size_f = new_comm.Get_size()
+    
 
 
 comm_display = comm.Create_group(comm.group.Incl([0,1]))
@@ -39,9 +40,12 @@ class Colony:
         pos_init : Initial positions of ants (anthill position)
         max_life : Maximum life that ants can reach
     """
-    def __init__(self, nb_ants, pos_init, max_life):
+    def __init__(self, nb_ants, pos_init, max_life,index_min,index_max):
+        #parametros que eu botei
+        self.index_min = index_min
+        self.index_max = index_max
         # Each ant has is own unique random seed
-        self.seeds = np.arange(1, nb_ants+1, dtype=np.int64)
+        self.seeds = np.arange(index_min+1, index_max+1, dtype=np.int64)
         # State of each ant : loaded or unloaded
         self.is_loaded = np.zeros(nb_ants, dtype=np.int8)
         # Compute the maximal life amount for each ant :
@@ -233,20 +237,20 @@ class Colony:
     def advance(self, the_maze, pos_food, pos_nest, pheromones,food_counter=0):
         
         if not new_comm == MPI.COMM_NULL:
-            index_min = floor(rank_f * self.age.shape[0]/size_f)
-            index_max = floor((rank_f+1) * self.age.shape[0]/size_f)
-            loaded_ants = np.nonzero(self.is_loaded[index_min:index_max] == True)[0]
-            unloaded_ants = np.nonzero(self.is_loaded[index_min:index_max] == False)[0]
+            
+            loaded_ants = np.nonzero(self.is_loaded == True)[0]
+            unloaded_ants = np.nonzero(self.is_loaded == False)[0]
             if food_counter is None:
                     food_counter = 0
             if loaded_ants.shape[0] > 0:
                 #on trouve les index pour chaque processeur de calcul
                 #acho q posso jogar esse loaded _ants ja com os indices certos
                 food_counter = self.return_to_nest(loaded_ants, pos_nest, food_counter)
+            new_comm.barrier()
         food_counter = comm.reduce(food_counter,op = MPI.SUM,root=0)
         if not new_comm == MPI.COMM_NULL:
-            self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
-            self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
+            # self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
+            # self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
             #aqui atualizamos o age e a posicao, ja que as formigas com comida foram manda
             #das pra casa
             #precisamos atualizar isloaded, age e o foodcounter tem q ser reduzido
@@ -257,26 +261,32 @@ class Colony:
                 #paralelizado, a matriz pheromones dentro dele nao passa nenhuma modificacao
                 self.explore(unloaded_ants, the_maze, pos_food, pos_nest, pheromones)
             new_comm.barrier()
-            self.seeds = np.hstack(new_comm.allgather(self.seeds[index_min:index_max]))
-            self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
-            self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
-            self.historic_path = np.vstack(new_comm.allgather(self.historic_path[index_min:index_max]))
-            self.directions = np.hstack(new_comm.allgather(self.directions[index_min:index_max]))
-            if rank_f == 0:
-                old_pos_ants = self.historic_path[range(0, self.seeds.shape[0]), self.age[:], :]
-                has_north_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.NORTH) > 0
-                has_east_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.EAST) > 0
-                has_south_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.SOUTH) > 0
-                has_west_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.WEST) > 0
-                
+            # self.seeds = np.hstack(new_comm.allgather(self.seeds[index_min:index_max]))
+            # self.age = np.hstack(new_comm.allgather(self.age[index_min:index_max]))
+            # self.is_loaded = np.hstack(new_comm.allgather(self.is_loaded[index_min:index_max]))
+            # self.historic_path = np.vstack(new_comm.allgather(self.historic_path[index_min:index_max]))
+            # self.directions = np.hstack(new_comm.allgather(self.directions[index_min:index_max]))
+            #on partage les phereomones
+            
+            old_pos_ants = self.historic_path[range(0, self.seeds.shape[0]), self.age[:], :]
+            has_north_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.NORTH) > 0
+            has_east_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.EAST) > 0
+            has_south_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.SOUTH) > 0
+            has_west_exit = np.bitwise_and(the_maze.maze[old_pos_ants[:, 0], old_pos_ants[:, 1]], maze.WEST) > 0
+
                 # Marking pheromones:
             
-                old_pheromones = pheromones.pheromon.copy()
-                [pheromones.mark(self.historic_path[i, self.age[i], :],
-                                [has_north_exit[i], has_east_exit[i], 
-                                has_west_exit[i], has_south_exit[i]],
-                                old_pheromones) for i in range(self.directions.shape[0])]
-        pheromones.pheromon = comm.bcast(pheromones.pheromon,root = 1)
+            old_pheromones = pheromones.pheromon.copy()
+            #old_pheromones = result
+            [pheromones.mark(self.historic_path[i, self.age[i], :],
+                        [has_north_exit[i], has_east_exit[i], 
+                        has_west_exit[i], has_south_exit[i]],
+                        old_pheromones) for i in range(self.directions.shape[0])]
+            
+            result= np.zeros_like(pheromones.pheromon)
+            new_comm.Allreduce(pheromones.pheromon,result, op = MPI.MAX)
+            pheromones.pheromon = result.copy()
+        #pheromones.pheromon = comm_display.bcast(pheromones.pheromon,root = 1)
         #maintenant on fait une communication pour mettre a jour tous
         #les instances de collones dans chaque processeur
         #rank_i = 1 dans le communicateur general est le responsable pour les fourmis
@@ -287,7 +297,7 @@ class Colony:
         #     print("check for 0",food_counter)
         if not comm_display == MPI.COMM_NULL:
             #food_counter = comm_display.bcast(food_counter,root = 1)
-            self.seeds = comm_display.bcast(np.array(self.seeds),root = 1)
+            self.seeds = np.hstack(comm_display.bcast(np.array(self.seeds),root = 1))
             self.is_loaded = comm_display.bcast(np.array(self.is_loaded),root =1)
             self.max_life = comm_display.bcast(np.array(self.max_life),root =1)
             self.age = comm_display.bcast(np.array(self.age),root =1)
@@ -328,7 +338,12 @@ if __name__ == "__main__":
     
     a_maze = maze.Maze(size_laby, 12345)
     #les formis qui seront creees
-    ants = Colony(nb_ants, pos_nest, max_life)
+    if rank_i==0:
+        ants = Colony(nb_ants, pos_nest, max_life,0,nb_ants)
+    if rank_i!=0:
+        index_min = floor(rank_f * nb_ants/size_f)
+        index_max = floor((rank_f+1) * nb_ants/size_f)
+        ants = Colony(index_max-index_min, pos_nest, max_life,index_min,index_max)
     unloaded_ants = np.array(range(nb_ants))
     alpha = 0.9
     beta  = 0.99
