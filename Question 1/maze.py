@@ -64,7 +64,7 @@ class Maze:
         #  Load patterns for maze display :
         img = pg.image.load("cases.png").convert_alpha()
         for i in range(0, 128, 8):
-            self.cases_img.append(pg.Surface.subsurface(img, i, 0, 8, 8))
+                self.cases_img.append(pg.Surface.subsurface(img, i, 0, 8, 8))
 
     def display(self):
         """
