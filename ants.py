@@ -267,21 +267,21 @@ class Colony:
         #rank_i = 1 dans le communicateur general est le responsable pour les fourmis
         #print("Processeur {} has: ".format(rank_i),type(food_counter))
         food_counter = comm.reduce(food_counter,op = MPI.SUM,root = 0)
-        self.seeds = comm.bcast(np.array(self.seeds),root = 1)
-        self.is_loaded = comm.bcast(np.array(self.is_loaded),root =1)
-        self.max_life = comm.bcast(np.array(self.max_life),root =1)
-        self.age = comm.bcast(np.array(self.age),root =1)
-        self.historic_path = comm.bcast(np.array(self.historic_path),root =1)
-        self.directions = comm.bcast(np.array(self.directions),root =1)
-        pheromones.pheromon=comm.bcast(pheromones.pheromon,root=1)
-        # if not comm_display == MPI.COMM_NULL:
-        #     self.seeds = comm_display.bcast(np.array(self.seeds),root = 1)
-        #     self.is_loaded = comm_display.bcast(np.array(self.is_loaded),root =1)
-        #     self.max_life = comm_display.bcast(np.array(self.max_life),root =1)
-        #     self.age = comm_display.bcast(np.array(self.age),root =1)
-        #     self.historic_path = comm_display.bcast(np.array(self.historic_path),root =1)
-        #     self.directions = comm_display.bcast(np.array(self.directions),root =1)
-        #     pheromones.pheromon=comm_display.bcast(pheromones.pheromon,root=1)
+        # self.seeds = comm.bcast(np.array(self.seeds),root = 1)
+        # self.is_loaded = comm.bcast(np.array(self.is_loaded),root =1)
+        # self.max_life = comm.bcast(np.array(self.max_life),root =1)
+        # self.age = comm.bcast(np.array(self.age),root =1)
+        # self.historic_path = comm.bcast(np.array(self.historic_path),root =1)
+        # self.directions = comm.bcast(np.array(self.directions),root =1)
+        # pheromones.pheromon=comm.bcast(pheromones.pheromon,root=1)
+        if not comm_display == MPI.COMM_NULL:
+            #self.seeds = comm_display.bcast(np.array(self.seeds),root = 1)
+            #self.is_loaded = comm_display.bcast(np.array(self.is_loaded),root =1)
+            #self.max_life = comm_display.bcast(np.array(self.max_life),root =1)
+            self.age = comm_display.bcast(np.array(self.age),root =1)
+            self.historic_path = comm_display.bcast(np.array(self.historic_path),root =1)
+            self.directions = comm_display.bcast(np.array(self.directions),root =1)
+            pheromones.pheromon=comm_display.bcast(pheromones.pheromon,root=1)
         return food_counter
 
     def display(self, screen):
@@ -335,8 +335,7 @@ if __name__ == "__main__":
     snapshop_taken = False
     deb_1 = time.time()
     while True:
-        if finish:
-            exit(0)
+          
         #ici l'ecran de 0 sera la seule visualisée
         if rank_i == 0:
             for event in pg.event.get():
@@ -345,7 +344,8 @@ if __name__ == "__main__":
                     finish = True
                     #continue#on chagne le status du boucle et on 
         finish = comm.bcast(finish,root=0)
-                    
+        if finish:
+            exit(0)            
         
 
         
